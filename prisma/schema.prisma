@@ -1,0 +1,248 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===============================
+// MODELO USUARIO
+// ===============================
+model usuario {
+  id         Int    @id @default(autoincrement())
+  email      String @unique
+  contrasena String
+  // Relación 1:1 (cada usuario tiene un rol asignado)
+  rol_id     Int?
+  rol        rol?   @relation("RolDelUsuario", fields: [rol_id], references: [id])
+
+  // Relación 1:N (el usuario puede crear muchos roles)
+  roles_creados rol[] @relation("RolesCreados")
+
+  // Relación 1:N (el usuario puede crear muchos permisos)
+  permisos_creados permiso[]
+
+  reservas reserva[]
+}
+
+// ===============================
+// MODELO ROL
+// ===============================
+model rol {
+  id             Int      @id @default(autoincrement())
+  nombre         String   @unique
+  fecha_registro DateTime @default(now())
+  estado         String   @default("activo")
+  descripcion    String
+
+  // 1:N → un rol pertenece a muchos usuarios
+  usuario_asignado usuario[] @relation("RolDelUsuario")
+
+  // 1:N → un rol fue creado por un usuario
+  usuario_creador_id Int?
+  usuario_creador    usuario? @relation("RolesCreados", fields: [usuario_creador_id], references: [id])
+
+  // N:M → muchos roles pueden tener muchos permisos
+  permisos permiso[] @relation("permisos_roles")
+}
+
+enum Estado {
+  activo
+  inactivo
+}
+
+// ===============================
+// MODELO PERMISO
+// ===============================
+model permiso {
+  id             Int      @id @default(autoincrement())
+  nombre         String   @unique
+  fecha_registro DateTime @default(now())
+  estado         Estado   @default(activo)
+  descripcion    String
+
+  // N:M → muchos permisos pueden pertenecer a muchos roles
+  roles rol[] @relation("permisos_roles")
+
+  // 1:N → un usuario puede crear muchos permisos
+  usuario_creador_id Int?
+  usuario_creador    usuario? @relation(fields: [usuario_creador_id], references: [id])
+}
+
+// ===============================
+// MODELO PAQUETE TURISTICO
+// ===============================
+model paquete_turistico {
+  id                    Int                      @id @default(autoincrement())
+  nombre                String                   @unique
+  descripcion           String?
+  precio_total          Decimal                  @db.Decimal(10, 2)
+  duracion_dias         Int
+  fecha_inicio          DateTime
+  fecha_fin             DateTime
+  creado_en             DateTime                 @default(now())
+  estado                Estado
+  cantidad_personas     Int
+  // Relaciones
+  Image                 Image?
+  itinerarios           itinerario[]
+  reservas              reserva[]
+  servicios_disponibles disponibilidad_paquete[]
+  paqueteServicios      paquete_servicio[]
+}
+
+// ===============================
+// TABLA PUENTE PAQUETE TURISTICO - DISPONIBILIDAD
+// ===============================
+model disponibilidad_paquete {
+  paquete_id        Int
+  disponibilidad_id Int
+
+  paquete        paquete_turistico @relation(fields: [paquete_id], references: [id])
+  disponibilidad disponibilidad    @relation(fields: [disponibilidad_id], references: [id])
+
+  @@id([paquete_id, disponibilidad_id])
+}
+
+// ===============================
+// MODELO ITINERARIO
+// ===============================
+model itinerario {
+  id          Int                @id @default(autoincrement())
+  nombre      String
+  dia         Int
+  descripcion String
+  paquete_id  Int?
+  paquete     paquete_turistico? @relation(fields: [paquete_id], references: [id])
+  actividades actividad[]
+}
+
+// ===============================
+// MODELO ACTIVIDAD
+// ===============================
+model actividad {
+  id            Int         @id @default(autoincrement())
+  nombre        String      @unique
+  descripcion   String?
+  hora_inicio   DateTime?
+  hora_fin      DateTime?
+  itinerario_id Int?
+  itinerario    itinerario? @relation(fields: [itinerario_id], references: [id])
+}
+
+// ===============================
+// MODELO SERVICIO
+// ===============================
+model servicio {
+  id          Int            @id @default(autoincrement())
+  nombre      String
+  descripcion String?
+  precio      Decimal        @db.Decimal(10, 2)
+  tipo        TipoDeServicio
+
+  proveedor_id Int?
+  proveedor    proveedor? @relation(fields: [proveedor_id], references: [id])
+
+  disponibilidades disponibilidad[]
+  paqueteServicios paquete_servicio[]
+
+  @@unique([nombre, proveedor_id])
+}
+
+// ===============================
+// MODELO DISPONIBILIDAD
+// ===============================
+model disponibilidad {
+  id                     Int                      @id @default(autoincrement())
+  estado                 EstadoDisponibilidad
+  fechaInicio            DateTime
+  fechaFin               DateTime
+  servicioId             Int
+  servicio               servicio                 @relation(fields: [servicioId], references: [id])
+  cupo                   Int
+  precio                 Decimal                  @db.Decimal(10, 2)
+  detalles               String
+  disponibilidadPaquetes disponibilidad_paquete[]
+}
+
+// ===============================
+// RELACION PAQUETE TURISTICO - SERVICIO (N:M)
+// ===============================
+model paquete_servicio {
+  paquete_id  Int
+  servicio_id Int
+
+  paquete  paquete_turistico @relation(fields: [paquete_id], references: [id])
+  servicio servicio          @relation(fields: [servicio_id], references: [id])
+
+  @@id([paquete_id, servicio_id])
+}
+
+// ===============================
+// MODELO RESERVA
+// ===============================
+model reserva {
+  id              Int      @id @default(autoincrement())
+  usuario_id      Int
+  paquete_id      Int
+  fecha_reserva   DateTime @default(now())
+  numero_personas Int      @default(1)
+  estado          String   @default("pendiente") // pendiente, confirmada, cancelada
+
+  usuario           usuario           @relation(fields: [usuario_id], references: [id])
+  paquete_turistico paquete_turistico @relation(fields: [paquete_id], references: [id])
+}
+
+// ===============================
+// MODELO IMAGE
+// ===============================
+model Image {
+  id         String             @id @default(cuid())
+  filename   String
+  url        String
+  mimetype   String
+  size       Int
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+  paquete_id Int?               @unique
+  paquete    paquete_turistico? @relation(fields: [paquete_id], references: [id])
+}
+
+// ===============================
+// MODELO PROVEEDOR
+// ===============================
+model proveedor {
+  id                 Int            @id @default(autoincrement())
+  nombre             String         @unique
+  email              String         @unique
+  numero_de_telefono String
+  descripcion        String
+  tipo               TipoDeServicio
+  servicios          servicio[]
+}
+
+// ===============================
+// ENUM TIPODESERVICIO
+// ===============================
+enum TipoDeServicio {
+  ALOJAMIENTO
+  TRANSPORTE
+  SEGURO
+  ALIMENTACION
+  ACTIVIDAD
+  HOSPEDAJE
+}
+
+enum EstadoDisponibilidad {
+  bloqueada
+  no_disponible
+  disponible
+}
